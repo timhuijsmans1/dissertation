@@ -32,9 +32,11 @@ class TweetCollector():
                     break
                 # extract ticker symbol from company line
                 ticker = line.split(',')[1]
+                ticker = "$" + ticker
                 ticker_list.append(ticker)
-
-        return ticker_list
+        
+        # we ditch one of the nasdaq tickers because of max query length
+        return ticker_list[:-1]
     
     def query_compiler(self):
         # compile lists of tickers and emoticons with OR bool
@@ -42,7 +44,8 @@ class TweetCollector():
         emoticon_query = "(" + " OR ".join(self.emoticon_list) + ")"
 
         # combine tickers, emoticons and query requirements
-        self.query = ticker_query + " " + emoticon_query + " lang:en -is:retweet"
+        self.query = ticker_query + " " + emoticon_query + " -is:retweet lang:en"
+        print(self.query)
 
         return
 
@@ -75,6 +78,9 @@ class TweetCollector():
         return ticker_bool * emoticon_bool
 
     def result_writer(self):
+        # the usage of this is debatable, as it kicks out tweets with 
+        # lowercase ticker symbols. This might be a good thing for tweet
+        # trustworthiness though, but we will need to look into this.
         good_tweets = 0
         false_tweets = 0
         with open(self.output_path, 'w+') as f:  
@@ -106,7 +112,7 @@ class TweetCollector():
 if __name__ == "__main__":
     # global vars
     NASDAQ_100_PATH = "./nasdaq_100_listings.csv"
-    OUTPUT_PATH = "./collected_data/filtered_search_results"
+    OUTPUT_PATH = "./collected_data/filtered_search_results.txt"
     BEARER = os.environ.get("BEARER")
     CLIENT = Twarc2(bearer_token=BEARER)
     START_TIME = datetime.datetime(2017, 11, 9, 0, 0, 0, 0, datetime.timezone.utc)
