@@ -6,16 +6,18 @@ class dataExplorer:
     def data_reader(self, training_data_path):
         with open(training_data_path, 'r') as f:
             while True:
-                labelled_tweet = f.readline()
-                if not labelled_tweet:
+                line = f.readline()
+                if not line:
                     break
-                else: 
-                    label = labelled_tweet[0]
-                    token_string = json.loads(labelled_tweet[2:])
+                tweet_data = json.loads(line)
+                label = tweet_data[0]
+
+                if label == -1:
+                    print(tweet_data)
+                    print('-' * 30)
+        
+        return
                 
-                if label == '-':
-                    print(label, token_string)
-                    print('-' * 50)
 
 if __name__ == "__main__":
     TRAINING_DATA_PATH = '../data/labelled_data/labelled_data.txt'

@@ -69,23 +69,42 @@ class dataLabeller:
     
     def emoticon_labeller(self, emoticon_list):
         emoticon_score = 0
+        used_emoticons = [] # keeps track of the emoticons used for score calculation
         for emoticon in emoticon_list:
             if emoticon in self.pos_emoticon:
+                used_emoticons.append(emoticon)
                 emoticon_score += 1
             if emoticon in self.neg_emoticon:
+                used_emoticons.append(emoticon)
                 emoticon_score -= 1
         if emoticon_score > 0:
             label = 1
-        else:
+        if emoticon_score < 0:
             label = -1
+        if emoticon_score == 0:
+            label = None
 
-        return label, emoticon_score
+        return label, emoticon_score, used_emoticons
 
-    def label_writer(self, label, output_path, tweet_text):
+    def label_writer(
+        self, 
+        label, 
+        output_path, 
+        tweet_text, 
+        username, 
+        emoticon_score, 
+        used_emoticons
+        ):
         with open(output_path, 'a+') as f:
-            tweet_text_string = json.dumps(tweet_text)
-            labelled_tweet_string = str(label) + " " + tweet_text_string + "\n"
-            f.write(labelled_tweet_string)
+            tuple_to_write = (
+                label, 
+                username, 
+                tweet_text, 
+                used_emoticons, 
+                emoticon_score
+            )
+            string_of_tuple = json.dumps(tuple_to_write) + "\n"
+            f.write(string_of_tuple)
 
         return
         
@@ -104,6 +123,7 @@ class dataLabeller:
                     # splits all tokens in the tweets
                     tweet_data = json.loads(line)
                     tweet_text = tweet_data['text']
+                    username = tweet_data['author']['username']
                     tokens = tweet_text.split(" ")
 
                     # extract the emoticons from the tweet_text 
@@ -112,13 +132,20 @@ class dataLabeller:
 
                     # labels and writes tweet, keeps track of class balance
                     lexicon_label, lexicon_score = self.lexicon_labeller(tokens)
-                    emoticon_label, emoticon_score = self.emoticon_labeller(emoticon_list)
+                    emoticon_label, emoticon_score, used_emoticons = (
+                        self.emoticon_labeller(emoticon_list)
+                    )
                     
                     if lexicon_label == emoticon_label:
-                        self.label_writer(lexicon_label, self.output_path, tokens)
+                        self.label_writer(
+                            lexicon_label,
+                            self.output_path, 
+                            tokens, 
+                            username, 
+                            emoticon_score, 
+                            used_emoticons
+                        )
                         class_balance_counter[lexicon_label] += 1 
-                        print(lexicon_label, tokens)
-
                     count += 1
                     print(count)
         print(class_balance_counter)
