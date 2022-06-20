@@ -3,25 +3,40 @@ import datetime
 import json
 
 from twarc import Twarc2, expansions
+from itertools import islice
 
 class TweetCollector():
 
     def __init__(self, 
-                ticker_path, 
+                ticker_100_path,
+                full_ticker_path, 
+                nyse_path,
                 emoticon_list, 
                 client, 
                 start_datetime, 
                 end_datetime,
-                output_path
+                output_path,
+                full_nasdaq_list=True,
+                nyse=True
         ):
-        self.ticker_list = self.ticker_loader(ticker_path)
+        if full_nasdaq_list:
+            self.ticker_list = self.ticker_loader_full(full_ticker_path, False)
+            if nyse == True:
+                self.ticker_list = self.add_nyse(nyse_path)   
+        else:
+            self.ticker_list = self.ticker_loader_100(ticker_100_path)
+        
+        # splits the ticker list into chunks because of the query size limit
+        # of the tweet search API
+        self.ticker_subsets = self.ticker_list_splitter()
+
         self.emoticon_list = emoticon_list
         self.client = client
         self.start_datetime = start_datetime
         self.end_datetime = end_datetime
         self.output_path = output_path
 
-    def ticker_loader(self, path):
+    def ticker_loader_100(self, path):
         ticker_list = []
         with open(path, 'r') as f:
 
@@ -35,95 +50,132 @@ class TweetCollector():
                 ticker = "$" + ticker
                 ticker_list.append(ticker)
         
-        # we ditch one of the nasdaq tickers because of max query length
-        return ticker_list[:-1]
+        return ticker_list
+
+    def ticker_loader_full(self, path, nyse):
+        ticker_list = []
+
+        with open(path, 'r') as f:
+            ticker_dict = json.load(f)
+            # dataset formats provided differ for the two exchanges,
+            # hence the different symbol keys
+            if nyse:
+                ticker_list = ["$" + company_dict['ACT Symbol'] for company_dict in ticker_dict]    
+            if not nyse:
+                ticker_list = ["$" + company_dict['Symbol'] for company_dict in ticker_dict]
+        
+        return ticker_list
+
+    def add_nyse(self, path):
+        nyse_tickers = set(self.ticker_loader_full(path, True))
+        total_tickers = list(set(self.ticker_list) | nyse_tickers)
+        return total_tickers
+
+    def ticker_list_splitter(self):
+        iterator = iter(self.ticker_list)
+        
+        return iter(lambda: tuple(islice(iterator, 75)), ())
     
-    def query_compiler(self):
+    def query_compiler(self, ticker_list_subset):
         # compile lists of tickers and emoticons with OR bool
-        ticker_query = "(" + " OR ".join(self.ticker_list) + ")"
+        ticker_query = "(" + " OR ".join(ticker_list_subset) + ")"
         emoticon_query = "(" + " OR ".join(self.emoticon_list) + ")"
 
         # combine tickers, emoticons and query requirements
-        self.query = ticker_query + " " + emoticon_query + " -is:retweet lang:en"
-        print(self.query)
+        query = ticker_query + " " + emoticon_query + " -is:retweet lang:en"
+    
+        return query
 
-        return
-
-    def execute_search(self):
-        self.search_results = self.client.search_all(
-                            query=self.query, 
+    def execute_search(self, query):
+        search_results = self.client.search_all(
+                            query=query, 
                             start_time=self.start_datetime, 
                             end_time=self.end_datetime, 
                             max_results=100
         )
 
-        return
+        return search_results
 
-    def result_filter(self, tweet):
+    def result_filter(self, tweet, ticker_filter=False):
         emoticon_bool = False
         ticker_bool = False
         
         tweet_text = tweet["text"]
 
         # check if the tweet indeed contains a nasdaq 100 ticker or an emoticon
-        for ticker in self.ticker_list:
-            if ticker in tweet_text:
-                ticker_bool = True
-                break
         for emoticon in self.emoticon_list:
             if emoticon in tweet_text:
                 emoticon_bool = True
                 break
-        
-        return ticker_bool * emoticon_bool
+        # default is to not filter by ticker because of capitals 
+        if not ticker_filter:
+            return emoticon_bool
 
-    def result_writer(self):
-        # the usage of this is debatable, as it kicks out tweets with 
-        # lowercase ticker symbols. This might be a good thing for tweet
-        # trustworthiness though, but we will need to look into this.
+        # if filter ticker is enabled, we make sure that the tweet indeed
+        # contains one of the tickers in our ticker_list
+        if ticker_filter:
+            for ticker in self.ticker_list:
+                if ticker in tweet_text:
+                    ticker_bool = True
+                    break
+
+            return ticker_bool * emoticon_bool
+
+    def result_writer(self, query_list):
         good_tweets = 0
         false_tweets = 0
-        with open(self.output_path, 'w+') as f:  
-            for page in self.search_results:
-                result = expansions.flatten(page)
+        with open(self.output_path, 'w+') as f: 
+            # execute the search for every subset of the ticker list
+            for i, query in enumerate(query_list):
+                print(f'processing results of {i+1}/{len(query_list)}')
+                search_results = self.execute_search(query)
+                
+                # this is required because of the result generator returned
+                # by the Twitter API
+                for page in search_results:
+                    result = expansions.flatten(page)
 
-                # check if tweets are valid and write valid tweets
-                for tweet in result:
-                    if self.result_filter(tweet) == True:
-                        f.write('%s\n' % json.dumps(tweet))
-                        good_tweets += 1
-                    else:
-                        false_tweets += 1
-                print(datetime.datetime.now())
-                print("good tweets: ", good_tweets)
-                print("false tweets: ", false_tweets)
-                print("sum: ", false_tweets + good_tweets)
-                print('-' * 30)
-        return
+                    # check if tweets are valid and write valid tweets
+                    for tweet in result:
+                        if self.result_filter(tweet) == True:
+                            f.write('%s\n' % json.dumps(tweet))
+                            good_tweets += 1
+                        else:
+                            false_tweets += 1
                     
-    def execute(self):
-        self.query_compiler()
-        self.execute_search()
-        self.result_writer()
+                    # terminal output
+                    print(datetime.datetime.now())
+                    print("good tweets: ", good_tweets)
+                    print("false tweets: ", false_tweets)
+                    print("sum: ", false_tweets + good_tweets)
+                    print('-' * 30)
 
         return
 
+    def execute(self):
+        query_list = [self.query_compiler(tickers) for tickers in self.ticker_subsets]
+        self.result_writer(query_list)
 
 if __name__ == "__main__":
     # global vars
     NASDAQ_100_PATH = "./nasdaq_100_listings.csv"
-    OUTPUT_PATH = "./collected_data/filtered_search_results.txt"
+    FULL_NASDAQ_PATH = "./nasdaq-listed-symbols.json"
+    NYSE_PATH = "./nyse-listed.json"
+    NOW = datetime.datetime.now().strftime("%m-%d-%Y_%H;%M;%S")
+    OUTPUT_PATH = f"./collected_data/filtered_search_results_{NOW}.txt"
     BEARER = os.environ.get("BEARER")
     CLIENT = Twarc2(bearer_token=BEARER)
     START_TIME = datetime.datetime(2017, 11, 9, 0, 0, 0, 0, datetime.timezone.utc)
     END_TIME = datetime.datetime(2022, 5, 30, 0, 0, 0, 0, datetime.timezone.utc)
-    POS_EMOTICON_LIST = ["😀", "😃", "😄", "😁", "🙂", "😊", "🤩", "🤑", "🚀", "💎"]
-    NEG_EMOTICON_LIST = ["😡", "😤", "😟", "😰", "😨", "😖", "😩", "🤬", "😠", "💀"]
+    POS_EMOTICON_LIST = ["😀", "😃", "😄", "😁", "🙂"]
+    NEG_EMOTICON_LIST = ["😡", "😤", "😟", "😰", "😨", "😖", "😩", "🤬", "😠", "💀", "👎", "😱"]
     EMOTICON_LIST = POS_EMOTICON_LIST + NEG_EMOTICON_LIST
 
     # execute program
     tweet_collector = TweetCollector(
-                        NASDAQ_100_PATH, 
+                        NASDAQ_100_PATH,
+                        FULL_NASDAQ_PATH,
+                        NYSE_PATH,
                         EMOTICON_LIST,
                         CLIENT,
                         START_TIME,
