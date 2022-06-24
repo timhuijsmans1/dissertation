@@ -2,6 +2,8 @@ import json
 import os
 import re
 
+from Levenshtein import distance
+
 class dataLabeller:
 
     def __init__(
@@ -114,6 +116,8 @@ class dataLabeller:
 
         with open(path, 'r') as f:
             count = 1
+            previous_tweet = "initial tweet" # start value for tweet comparison
+            previous_username = "JohnDoe" # start value for username comparison
             while True:
                 line = f.readline()
                 # break the while loop at the end of the file
@@ -126,26 +130,40 @@ class dataLabeller:
                     username = tweet_data['author']['username']
                     tokens = tweet_text.split(" ")
 
-                    # extract the emoticons from the tweet_text 
-                    tweet_text_encoded = json.dumps(tweet_text)
-                    emoticon_list = self.emoticon_extracter(tweet_text_encoded)
-
-                    # labels and writes tweet, keeps track of class balance
-                    lexicon_label, lexicon_score = self.lexicon_labeller(tokens)
-                    emoticon_label, emoticon_score, used_emoticons = (
-                        self.emoticon_labeller(emoticon_list)
-                    )
+                    # check similarity between current and previous tweet beginning
+                    leven_distance = distance(previous_tweet[:30], tweet_text[:30])
+                    previous_tweet = tweet_text
                     
-                    if lexicon_label == emoticon_label:
-                        self.label_writer(
-                            lexicon_label,
-                            self.output_path, 
-                            tokens, 
-                            username, 
-                            emoticon_score, 
-                            used_emoticons
+                    # skip the current tweet if the username is equal to
+                    # the previous username
+                    if previous_username == username:
+                        if username == 'trader_steve1':
+                            print("continued")
+                        continue
+                    previous_username = username
+                    
+                    if leven_distance > 10:
+                        # extract the emoticons from the tweet_text 
+                        tweet_text_encoded = json.dumps(tweet_text)
+                        emoticon_list = self.emoticon_extracter(tweet_text_encoded)
+
+                        # labels and writes tweet, keeps track of class balance
+                        lexicon_label, lexicon_score = self.lexicon_labeller(tokens)
+                        emoticon_label, emoticon_score, used_emoticons = (
+                            self.emoticon_labeller(emoticon_list)
                         )
-                        class_balance_counter[lexicon_label] += 1 
+                        
+                        if lexicon_label == emoticon_label:
+                            print(tokens)
+                            self.label_writer(
+                                lexicon_label,
+                                self.output_path, 
+                                tokens, 
+                                username, 
+                                emoticon_score, 
+                                used_emoticons
+                            )
+                            class_balance_counter[lexicon_label] += 1 
                     count += 1
                     print(count)
         print(class_balance_counter)
@@ -155,7 +173,10 @@ class dataLabeller:
 if __name__ == "__main__":
     # global variables
     DATA_PATH = (
-        "../data/collected_data/filtered_search_results_06-19-2022_20;02;51.txt"
+        "../data/collected_data/filtered_search_results_06-20-2022_15;50;14.txt"
+    )
+    TEST_DATA_PATH = (
+        "../data/collected_data/test.txt"
     )
     OUTPUT_PATH = "../data/labelled_data/labelled_data.txt"
     FINANCIAL_LEXICON_PATH = "../data/fin_sent_lexicon/lexicons/lexiconWNPMINW.csv"
@@ -165,7 +186,7 @@ if __name__ == "__main__":
 
     # exucute data labelling
     dataLabeller(
-        DATA_PATH, 
+        DATA_PATH,
         FINANCIAL_LEXICON_PATH, 
         OUTPUT_PATH, 
         LEXICON_SCORE_THRESHOLD, 

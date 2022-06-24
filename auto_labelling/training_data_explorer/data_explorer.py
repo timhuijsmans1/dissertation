@@ -12,7 +12,7 @@ class dataExplorer:
                 tweet_data = json.loads(line)
                 label = tweet_data[0]
 
-                if label == -1:
+                if label == 1:
                     print(tweet_data)
                     print('-' * 30)
         
