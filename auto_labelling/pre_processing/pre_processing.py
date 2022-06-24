@@ -22,13 +22,15 @@ class preProcessor:
         pre_processed_path, 
         output_path, 
         collection_data_path,
-        threshold 
+        cosine_threshold,
+        high_freq_threshold,
         ):
         self.raw_data_path = raw_data_path
         self.output_path = output_path
         self.pre_processed_path = pre_processed_path
         self.collection_data_path = collection_data_path
-        self.threshold = threshold
+        self.cosine_threshold = cosine_threshold
+        self.high_freq_threshold = high_freq_threshold
 
         self.unique_tweet_vectors = []
         self.vocabulary = set()
@@ -171,7 +173,6 @@ class preProcessor:
             dense_tweet_vector[token_index] += 1
         return dense_tweet_vector
 
-    @profile
     def cosine_similarity_check(self, threshold, vector_1, vector_2):
         """
         calculate cosine similarity between vector 1 and 2: return
@@ -183,30 +184,38 @@ class preProcessor:
         # cosine_similarity = cosine(vector_1, vector_2)
         return cosine_similarity >= threshold
     
-
     def duplicate_check(self, sparse_vector_list, vector_to_check):
         # assume that the tweet is no duplicate until tested
         new_tweet = True
-        for vector in sparse_vector_list:
+        for i, vector in enumerate(sparse_vector_list):
+            
             # break the loop if the tweet vector is a duplicate
-            dense_existing_vector = vector.todense()[0]
+            dense_existing_vector = vector[0].todense()[0]
 
             if self.cosine_similarity_check(
-                        self.threshold, 
+                        self.cosine_threshold, 
                         dense_existing_vector,
                         vector_to_check
                 ):
                 new_tweet = False
                 break
 
-        return new_tweet
+        return new_tweet, i
+
+    def sparse_in_list(self, list, sparse_vector):
+        for vector in list:
+            if (vector.todense() == sparse_vector.todense()).all():
+                return True
+        return False
                             
     def duplicate_filter(self):
         sparse_vectors = []
+        high_freq_vectors = []
         with open(self.pre_processed_path, 'r') as f_in:
             with open(self.output_path, 'w') as f_out:
                 count = 0
                 while True:
+                    print(high_freq_vectors)
                     line = f_in.readline()
                     if not line:
                         break
@@ -222,19 +231,24 @@ class preProcessor:
                         # check if duplicate or similar, always add the first
                         # vector to the list of sparse vectors
                         if sparse_vectors:
-                            new_tweet = self.duplicate_check(
+                            new_tweet, duplicate_index = self.duplicate_check(
                                                 sparse_vectors, 
                                                 dense_new_vector
                             )
                             # if the tweet vector is not similar, add it to the list
                             # and write the corresponding tweet data to the output file
                             if new_tweet:
-                                sparse_vectors.append(sparse.coo_array(dense_new_vector))
+                                sparse_vectors.append([sparse.coo_array(dense_new_vector), 1])
                                 f_out.write(line)
+                            else:
+                                sparse_vectors[duplicate_index][1] += 1
+                                if sparse_vectors[duplicate_index][1] > self.high_freq_threshold:
+                                    if not self.sparse_in_list(high_freq_vectors, sparse_vectors[duplicate_index][0]):
+                                        high_freq_vectors.append(sparse_vectors[duplicate_index][0])
                         else:
-                            sparse_vectors.append(sparse.coo_array(dense_new_vector))
+                            sparse_vectors.append([sparse.coo_array(dense_new_vector), 1])
                             f_out.write(line)
-
+                    
                         count += 1
                         if count % 1000 == 0:
                             sparse_vectors = []
@@ -250,13 +264,15 @@ if __name__ == "__main__":
     COLLECTION_DATA_PATH = "../data/preprocessed_data/collection_data.txt"
     OUTPUT_PATH = "../data/preprocessed_data/final_data.txt"
     COSINE_SIM_THRESHOLD = 0.6
+    HIGH_FREQ_THRESHOLD = 10
     
     pre_processor = preProcessor(
                         FULL_DATA_PATH, 
                         PREPROCESSED_PATH, 
                         OUTPUT_PATH, 
                         COLLECTION_DATA_PATH,
-                        COSINE_SIM_THRESHOLD
+                        COSINE_SIM_THRESHOLD,
+                        HIGH_FREQ_THRESHOLD
     )
     # make sure to clear the final data file before running
     if os.path.exists(OUTPUT_PATH):
