@@ -215,7 +215,6 @@ class preProcessor:
             with open(self.output_path, 'w') as f_out:
                 count = 0
                 while True:
-                    print(high_freq_vectors)
                     line = f_in.readline()
                     if not line:
                         break
@@ -233,13 +232,15 @@ class preProcessor:
                         if sparse_vectors:
                             new_tweet, duplicate_index = self.duplicate_check(
                                                 sparse_vectors, 
-                                                dense_new_vector
+                                                dense_new_vector,
                             )
                             # if the tweet vector is not similar, add it to the list
                             # and write the corresponding tweet data to the output file
                             if new_tweet:
                                 sparse_vectors.append([sparse.coo_array(dense_new_vector), 1])
                                 f_out.write(line)
+                            # if the tweet vector is similar, increase the frequency of the
+                            # vector in the list and 
                             else:
                                 sparse_vectors[duplicate_index][1] += 1
                                 if sparse_vectors[duplicate_index][1] > self.high_freq_threshold:
@@ -251,9 +252,17 @@ class preProcessor:
                     
                         count += 1
                         if count % 1000 == 0:
-                            sparse_vectors = []
-                        print(count)
-                    
+                            # this stores the history of high freq tweets in the 
+                            # sparse vector list to use in the next 1000 duplicate 
+                            # checks. the freq of 1 does not matter, as these tweets 
+                            # will remain in the high freq tweets anyways.
+                            sparse_vectors = [[vector, 1] for vector in high_freq_vectors]
+                            print("tweets in most recent tweets : ", len(sparse_vectors))
+                        if count % 100 == 0:    
+                            print("tweets processed: ", count)
+                            print("tweets in high freq tweets: ", len(high_freq_vectors))
+                            print("tweets in most recent tweets : ", len(sparse_vectors))
+         
         return                        
 
                         
