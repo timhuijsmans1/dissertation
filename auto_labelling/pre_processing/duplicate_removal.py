@@ -7,6 +7,7 @@ import emoji as emoji_lib
 import numpy as np
 import line_profiler
 import atexit
+import datetime
 
 from scipy import sparse
 from scipy.spatial.distance import cosine
@@ -14,7 +15,7 @@ from scipy.spatial.distance import cosine
 profile = line_profiler.LineProfiler()
 atexit.register(profile.print_stats)
 
-class preProcessor:
+class duplicatePreProcessor:
 
     def __init__(
         self, 
@@ -73,10 +74,10 @@ class preProcessor:
         tweet_text = re.sub(r'http\S+', '', tweet_text)
         # remove all usernames from tweet  
         tweet_text = re.sub(r'@\S+', '', tweet_text)
-        # replace all hyphens by a space
-        tweet_text = tweet_text.replace('-', ' ')
         # replace all underscores by a space
         tweet_text = tweet_text.replace('_', ' ')
+        # replace all hyphens by a space
+        tweet_text = tweet_text.replace('-', ' ')
 
         return tweet_text
 
@@ -166,7 +167,6 @@ class preProcessor:
         return
 
     def dense_vector_from_tokens(self, tokens):
-        # build sparse tweet vector
         dense_tweet_vector = np.zeros(len(self.vocabulary))
         for token in tokens:
             token_index = self.word2index[token]
@@ -181,7 +181,6 @@ class preProcessor:
         cosine_similarity = np.dot(vector_1, vector_2) \
             / (np.linalg.norm(vector_1) * np.linalg.norm(vector_2))
 
-        # cosine_similarity = cosine(vector_1, vector_2)
         return cosine_similarity >= threshold
     
     def duplicate_check(self, sparse_vector_list, vector_to_check):
@@ -208,13 +207,24 @@ class preProcessor:
                 return True
         return False
                             
-    def duplicate_filter(self):
+    def duplicate_filter(self, start_point, end_point):
         sparse_vectors = []
         high_freq_vectors = []
         with open(self.pre_processed_path, 'r') as f_in:
+            # skip to the start point before processing
+            for _ in range(0, start_point):
+                f_in.readline()
+
+            # print start byte for extra check
+            print(f_in.tell())
+
             with open(self.output_path, 'w') as f_out:
                 count = 0
                 while True:
+                    # limit the size of the high freq vectors to avoid 
+                    # time issues
+                    if len(high_freq_vectors) > 200:
+                        high_freq_vectors = []
                     line = f_in.readline()
                     if not line:
                         break
@@ -251,10 +261,13 @@ class preProcessor:
                             f_out.write(line)
                     
                         count += 1
+                        # break out the loop as soon as end point is reached
+                        if count == end_point:
+                            break
                         if count % 1000 == 0:
                             # this stores the history of high freq tweets in the 
                             # sparse vector list to use in the next 1000 duplicate 
-                            # checks. the freq of 1 does not matter, as these tweets 
+                            # checks. the freq of one does not matter, as these tweets 
                             # will remain in the high freq tweets anyways.
                             sparse_vectors = [[vector, 1] for vector in high_freq_vectors]
                             print("tweets in most recent tweets : ", len(sparse_vectors))
@@ -267,15 +280,18 @@ class preProcessor:
 
                         
 if __name__ == "__main__":
+    NOW = datetime.datetime.now().strftime("%m-%d-%Y_%H;%M;%S")
     TEST_DATA_PATH = "../data/collected_data/test_raw.txt"
     FULL_DATA_PATH = "../data/collected_data/filtered_search_results_06-20-2022_15;50;14.txt"
     PREPROCESSED_PATH = "../data/preprocessed_data/preprocessed.txt"
     COLLECTION_DATA_PATH = "../data/preprocessed_data/collection_data.txt"
-    OUTPUT_PATH = "../data/preprocessed_data/final_data.txt"
+    OUTPUT_PATH = f"../data/preprocessed_data/final_data_{NOW}.txt"
     COSINE_SIM_THRESHOLD = 0.6
     HIGH_FREQ_THRESHOLD = 10
+    START_LINE = int(input("Enter start line: "))
+    END_LINE = int(input("Enter end line: "))
     
-    pre_processor = preProcessor(
+    pre_processor = duplicatePreProcessor(
                         FULL_DATA_PATH, 
                         PREPROCESSED_PATH, 
                         OUTPUT_PATH, 
@@ -294,4 +310,4 @@ if __name__ == "__main__":
     else:
         pre_processor.load_collection_data()
     pre_processor.get_word2index()
-    pre_processor.duplicate_filter()
+    pre_processor.duplicate_filter(START_LINE, END_LINE)
