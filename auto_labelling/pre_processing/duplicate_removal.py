@@ -10,7 +10,6 @@ import atexit
 import datetime
 
 from scipy import sparse
-from scipy.spatial.distance import cosine
 
 profile = line_profiler.LineProfiler()
 atexit.register(profile.print_stats)
@@ -68,6 +67,8 @@ class duplicatePreProcessor:
         tweet_text = tweet_text.replace('\n', ' ')
         # replace all tabs in tweet by spaces
         tweet_text = tweet_text.replace('\t', ' ')
+        # remove RT tag from tweet
+        tweet_text = tweet_text.replace('RT', '')
         # replace all multiple spaces in tweet by single spaces
         tweet_text = re.sub(r'\s+', ' ', tweet_text)
         # remove all web links from tweet
@@ -76,8 +77,6 @@ class duplicatePreProcessor:
         tweet_text = re.sub(r'@\S+', '', tweet_text)
         # replace all underscores by a space
         tweet_text = tweet_text.replace('_', ' ')
-        # replace all hyphens by a space
-        tweet_text = tweet_text.replace('-', ' ')
 
         return tweet_text
 
@@ -96,7 +95,14 @@ class duplicatePreProcessor:
         # remove all empty tokens
         tweet_tokens = [token for token in tweet_tokens if token != '']
 
-        return tweet_tokens
+        # remove all numerical tokens
+        non_numerical_tokens = []
+        pattern_pos = r'[1-9]\d*(\.\d+)?'
+        for token in tweet_tokens:
+            if not re.search(pattern_pos, token):
+                non_numerical_tokens.append(token)            
+
+        return non_numerical_tokens
 
     def tweet_pre_processing(self, tweet_text):
 
@@ -116,31 +122,31 @@ class duplicatePreProcessor:
         return tweet_data
 
     def pre_processing(self):
-        with open(self.raw_data_path, 'r') as f_in:
-            with open(self.pre_processed_path, 'w') as f_out:
-                self.tweet_count = 0
-                while True:
-                    line = f_in.readline()
-                    if not line:
-                        break
-                    else:
-                        tweet_data = json.loads(line)
-                        tweet_text = tweet_data['text']
+        with open(self.raw_data_path, 'r') as f_in, open(self.pre_processed_path, 'w') as f_out:
+            
+            self.tweet_count = 0
+            while True:
+                line = f_in.readline()
+                if not line:
+                    break
+                else:
+                    tweet_data = json.loads(line)
+                    tweet_text = tweet_data['text']
 
-                        # run pre_processing on individual tweets
-                        pre_processed_tweet = self.tweet_pre_processing(tweet_text)
-                        pre_processed_text = pre_processed_tweet['tweet_tokens']
-                        self.vocabulary |= set(pre_processed_text)
-                        
-                        # write tweet data to the pre_processed_data file
-                        tweet_data['pre_processed_text'] = pre_processed_tweet
-                        f_out.write(json.dumps(tweet_data) + '\n')
+                    # run pre_processing on individual tweets
+                    pre_processed_tweet = self.tweet_pre_processing(tweet_text)
+                    pre_processed_text = pre_processed_tweet['tweet_tokens']
+                    self.vocabulary |= set(pre_processed_text)
+                    
+                    # write tweet data to the pre_processed_data file
+                    tweet_data['pre_processed_text'] = pre_processed_tweet
+                    f_out.write(json.dumps(tweet_data) + '\n')
 
-                        self.tweet_count += 1
-                        
-                        # print tweet count every 1000 tweets
-                        if self.tweet_count % 1000 == 0:
-                            print('Processed {} tweets'.format(self.tweet_count))
+                    self.tweet_count += 1
+                    
+                    # print tweet count every 1000 tweets
+                    if self.tweet_count % 1000 == 0:
+                        print('Processed {} tweets'.format(self.tweet_count))
 
         # write collection data to disk
         collection_data = {'tweet_count': self.tweet_count,
@@ -282,7 +288,7 @@ class duplicatePreProcessor:
 if __name__ == "__main__":
     NOW = datetime.datetime.now().strftime("%m-%d-%Y_%H;%M;%S")
     TEST_DATA_PATH = "../data/collected_data/test_raw.txt"
-    FULL_DATA_PATH = "../data/collected_data/filtered_search_results_06-20-2022_15;50;14.txt"
+    FULL_DATA_PATH = "../data/preprocessed_data/with_numerical_tokens/final_data_06-26-2022_15;11;01.txt"
     PREPROCESSED_PATH = "../data/preprocessed_data/preprocessed.txt"
     COLLECTION_DATA_PATH = "../data/preprocessed_data/collection_data.txt"
     OUTPUT_PATH = f"../data/preprocessed_data/final_data_{NOW}.txt"

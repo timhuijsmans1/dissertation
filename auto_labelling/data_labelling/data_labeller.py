@@ -1,6 +1,7 @@
 import json
 import os
 import re
+from this import d
 import emoji as emoji_lib
 import regex
 
@@ -8,7 +9,6 @@ class dataLabeller:
 
     def __init__(
             self, 
-            data_path, 
             lexicon_path, 
             output_path,
             negation_file_path,
@@ -26,7 +26,6 @@ class dataLabeller:
         self.pos_emoticon = pos_emoticon
         self.neg_emoticon = neg_emoticon
         self.negation_indicators = self.negation_indicator_loader(negation_file_path)
-        self.file_reader(data_path)
     
 
     def negation_indicator_loader(self, negation_file_path):
@@ -140,9 +139,10 @@ class dataLabeller:
         tweet_tokens = tweet_text.split(' ')
 
         # strip all punctuation of tokens
-        tweet_tokens = [token.strip(',.!;:?()# ') for token in tweet_tokens]
+        tweet_tokens = [token.strip(',.!;:?()#& ') for token in tweet_tokens]
 
         # remove all tokens not containing any alphanumeric characters
+        # and cast all tokens to lower
         tweet_tokens = [token.lower() for token in 
                         tweet_tokens if re.search(r'[a-zA-Z0-9]', token)]
 
@@ -193,10 +193,8 @@ class dataLabeller:
         i = 0
         while i < len(tokens):
             if re.search(pattern_pos, tokens[i]):
-                print('original: ', tokens)
                 tokens[i] = 'posnum'
             elif re.search(pattern_neg, tokens[i]):
-                print('original: ', tokens)
                 tokens[i] = 'negnum'
             i += 1
         return tokens
@@ -210,8 +208,8 @@ class dataLabeller:
         tweet_text, cashtag_list = self.cashtag_extractor(tweet_text)
 
         tweet_tokens = self.tokenisation(tweet_text)
-        tweet_tokens = self.negation_handling(tweet_tokens)
         tweet_tokens = self.num_handling(tweet_tokens)
+        tweet_tokens = self.negation_handling(tweet_tokens)
 
         tweet_data = {
                 'tweet_tokens': tweet_tokens, 
@@ -231,8 +229,37 @@ class dataLabeller:
             f.write(string_of_dict)
 
         return
+
+    def emoticon_lexicon_executor(self, dict_to_write):
+        tweet_tokens = dict_to_write['processed_tokens']
+        emoticon_list = dict_to_write['emoticon_list']
+        # label the tweet
+        lexicon_label, lexicon_score = self.lexicon_labeller(tweet_tokens)
+        emoticon_label, emoticon_score, used_emoticons = self.emoticon_labeller(emoticon_list)
+
+        if lexicon_label == emoticon_label:
+            dict_to_write['label'] = lexicon_label
         
-    def file_reader(self, path):
+        return dict_to_write
+    
+    def lexicon_executor(self, dict_to_write):
+        tweet_tokens = dict_to_write['processed_tokens']
+        # label the tweet
+        lexicon_label, lexicon_score = self.lexicon_labeller(tweet_tokens)
+        dict_to_write['label'] = lexicon_label
+        
+        return dict_to_write
+
+    def emoticon_executor(self, dict_to_write):
+        emoticon_list = dict_to_write['emoticon_list']
+        # label the tweet
+        emoticon_label, emoticon_score, used_emoticons = self.emoticon_labeller(emoticon_list)
+        dict_to_write['label'] = emoticon_label
+        
+        return dict_to_write
+
+        
+    def file_labeller(self, path, method='union'):
         class_balance_counter = {-1: 0, 0: 0, 1: 0}
 
         with open(path, 'r') as f:
@@ -244,6 +271,10 @@ class dataLabeller:
                 if not line:
                     break
                 else:
+                    # TODO this is a bit messy, but is done because the 
+                    # loaded data contains a lot of redundant info.
+                    # Rewrite this to not write values back and forth 
+                    # as much
                     tweet_data = json.loads(line)
                     tweet_text = tweet_data['text']
                     tweet_creation_date = tweet_data['created_at']
@@ -251,21 +282,23 @@ class dataLabeller:
                     tweet_tokens = pre_processed_data['tweet_tokens']
                     emoticon_list = pre_processed_data['emoticon_list']
                     cashtag_list = pre_processed_data['cashtag_list']
-                    
-                    # label the tweet
-                    lexicon_label, lexicon_score = self.lexicon_labeller(tweet_tokens)
-                    emoticon_label, emoticon_score, used_emoticons = self.emoticon_labeller(emoticon_list)
+                    dict_to_write = dict_to_write = {
+                        'original_text': tweet_text,
+                        'created_at': tweet_creation_date,
+                        'processed_tokens': tweet_tokens,
+                        'emoticon_list': emoticon_list,
+                        'cashtag_list': cashtag_list
+                    }
 
-                    if lexicon_label == emoticon_label:
-                        label = lexicon_label
-                        dict_to_write = {
-                            'label': label, 
-                            'original_text': tweet_text,
-                            'created_at': tweet_creation_date,
-                            'processed_tokens': tweet_tokens,
-                            'emoticon_list': emoticon_list,
-                            'cashtag_list': cashtag_list
-                        }
+                    if method == 'union':
+                        dict_to_write = self.emoticon_lexicon_executor(dict_to_write)
+                    elif method == 'lexicon':
+                        dict_to_write = self.lexicon_executor(dict_to_write)
+                    elif method == 'emoticon':
+                        dict_to_write = self.emoticon_executor(dict_to_write)
+                    
+                    if 'label' in dict_to_write:
+                        label = dict_to_write['label']
                         self.label_writer(self.output_path, dict_to_write)
 
                         if label == 1:
@@ -276,6 +309,7 @@ class dataLabeller:
                             class_balance_counter[0] += 1
 
                     count += 1
+                print(count)
         print(class_balance_counter)
 
         return
@@ -283,7 +317,7 @@ class dataLabeller:
 if __name__ == "__main__":
     # global variables
     DATA_PATH = (
-        "../data/preprocessed_data/final_data_06-26-2022_15;11;01.txt"
+        "../data/preprocessed_data/final_data_07-05-2022_16;29;51.txt"
     )
     OUTPUT_PATH = "../data/labelled_data/labelled_data.txt"
     FINANCIAL_LEXICON_PATH = "../data/fin_sent_lexicon/lexicons/lexiconWNPMINW.csv"
@@ -293,8 +327,7 @@ if __name__ == "__main__":
     NEG_EMOTICON_LIST = ["😡", "😤", "😟", "😰", "😨", "😖", "😩", "🤬", "😠", "💀", "👎", "😱"]
 
     # exucute data labelling
-    dataLabeller(
-        DATA_PATH,
+    data_labeller = dataLabeller(
         FINANCIAL_LEXICON_PATH, 
         OUTPUT_PATH, 
         NEG_INDICATOR_PATH,
@@ -302,3 +335,4 @@ if __name__ == "__main__":
         POS_EMOTICON_LIST, 
         NEG_EMOTICON_LIST
     )
+    data_labeller.file_labeller(DATA_PATH)

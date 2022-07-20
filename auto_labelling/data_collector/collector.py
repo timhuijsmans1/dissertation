@@ -76,13 +76,22 @@ class TweetCollector():
         
         return iter(lambda: tuple(islice(iterator, 75)), ())
     
-    def query_compiler(self, ticker_list_subset):
+    def emoticon_query_compiler(self, ticker_list_subset):
         # compile lists of tickers and emoticons with OR bool
         ticker_query = "(" + " OR ".join(ticker_list_subset) + ")"
         emoticon_query = "(" + " OR ".join(self.emoticon_list) + ")"
 
         # combine tickers, emoticons and query requirements
         query = ticker_query + " " + emoticon_query + " -is:retweet lang:en"
+    
+        return query
+
+    def ticker_query_compiler(self, ticker_list):
+        # compile lists of tickers and emoticons with OR bool
+        ticker_query = "(" + " OR ".join(ticker_list) + ")"
+
+        # combine tickers, emoticons and query requirements
+        query = ticker_query + " -is:retweet lang:en"
     
         return query
 
@@ -122,8 +131,7 @@ class TweetCollector():
             return ticker_bool * emoticon_bool
 
     def result_writer(self, query_list):
-        good_tweets = 0
-        false_tweets = 0
+
         with open(self.output_path, 'w+') as f: 
             # execute the search for every subset of the ticker list
             for i, query in enumerate(query_list):
@@ -137,23 +145,16 @@ class TweetCollector():
 
                     # check if tweets are valid and write valid tweets
                     for tweet in result:
-                        if self.result_filter(tweet) == True:
-                            f.write('%s\n' % json.dumps(tweet))
-                            good_tweets += 1
-                        else:
-                            false_tweets += 1
-                    
-                    # terminal output
-                    print(datetime.datetime.now())
-                    print("good tweets: ", good_tweets)
-                    print("false tweets: ", false_tweets)
-                    print("sum: ", false_tweets + good_tweets)
-                    print('-' * 30)
+                        f.write('%s\n' % json.dumps(tweet))
 
         return
 
-    def execute(self):
-        query_list = [self.query_compiler(tickers) for tickers in self.ticker_subsets]
+    def execute_emoticon_search(self):
+        query_list = [self.emoticon_query_compiler(tickers) for tickers in self.ticker_subsets]
+        self.result_writer(query_list)
+
+    def execute_company_search(self, ticker_list):
+        query_list = [self.ticker_query_compiler(ticker_list)]
         self.result_writer(query_list)
 
 if __name__ == "__main__":
@@ -165,11 +166,14 @@ if __name__ == "__main__":
     OUTPUT_PATH = f"./collected_data/filtered_search_results_{NOW}.txt"
     BEARER = os.environ.get("BEARER")
     CLIENT = Twarc2(bearer_token=BEARER)
-    START_TIME = datetime.datetime(2017, 11, 9, 0, 0, 0, 0, datetime.timezone.utc)
-    END_TIME = datetime.datetime(2022, 5, 30, 0, 0, 0, 0, datetime.timezone.utc)
+    # START_TIME = datetime.datetime(2017, 11, 9, 0, 0, 0, 0, datetime.timezone.utc)
+    # END_TIME = datetime.datetime(2022, 5, 30, 0, 0, 0, 0, datetime.timezone.utc)
+    START_TIME = datetime.datetime(2022, 7, 17, 0, 0, 0, 0, datetime.timezone.utc)
+    END_TIME = datetime.datetime(2022, 7, 18, 0, 0, 0, 0, datetime.timezone.utc)
     POS_EMOTICON_LIST = ["😀", "😃", "😄", "😁", "🙂"]
     NEG_EMOTICON_LIST = ["😡", "😤", "😟", "😰", "😨", "😖", "😩", "🤬", "😠", "💀", "👎", "😱"]
     EMOTICON_LIST = POS_EMOTICON_LIST + NEG_EMOTICON_LIST
+    TICKER_LIST = ['$AAPL']
 
     # execute program
     tweet_collector = TweetCollector(
@@ -182,4 +186,5 @@ if __name__ == "__main__":
                         END_TIME,
                         OUTPUT_PATH
     )
-    tweet_collector.execute()
+    # tweet_collector.execute()
+    tweet_collector.execute_company_search(TICKER_LIST)
