@@ -46,7 +46,8 @@ class TweetCollector():
             # by the Twitter API
             for page in search_results:
                 result = expansions.flatten(page)
-
+                last_result_of_page = result[-1]
+                print(last_result_of_page['created_at'])
                 # check if tweets are valid and write valid tweets
                 for tweet in result:
                     f.write('%s\n' % json.dumps(tweet))
@@ -192,10 +193,6 @@ class duplicatePreProcessor:
                     f_out.write(json.dumps(dict_to_write) + '\n')
 
                     self.tweet_count += 1
-                    
-                    # print tweet count every 1000 tweets
-                    if self.tweet_count % 1000 == 0:
-                        print('Processed {} tweets'.format(self.tweet_count))
 
         return
 
@@ -313,11 +310,7 @@ class duplicatePreProcessor:
                         # checks. the freq of one does not matter, as these tweets 
                         # will remain in the high freq tweets anyways.
                         sparse_vectors = [[vector, 1] for vector in high_freq_vectors]
-                        print("tweets in most recent tweets : ", len(sparse_vectors))
-                    if count % 100 == 0:    
-                        print("tweets processed: ", count)
-                        print("tweets in high freq tweets: ", len(high_freq_vectors))
-                        print("tweets in most recent tweets : ", len(sparse_vectors))
+
          
         return
 
@@ -438,8 +431,7 @@ class featureEngineering:
                 # write updated tweet_data to f_out
                 f_out.write(json.dumps(updated_tweet_data) + "\n")
                 count += 1
-                if count % 1000 == 0:    
-                    print(count)
+
         return 
 
 class features2Instance:
@@ -503,17 +495,12 @@ def build_sparse_matrix(tweet_path, vocabulary):
             if not line:
                 break
             tokens, feature_dictionary = read_line(line)
-            print(tokens)
             new_sparse_matrix = tweet2instance.get_sparse_matrix_from_tweet(tokens, feature_dictionary)
-            print('catch 1')
             sparse_matrix = append_sparse_matrix(
                                 new_sparse_matrix, 
                                 sparse_matrix
             )
-            print('catch 2')
             count += 1
-            if count % 100 == 0:   
-                print(count)
 
     return sparse_matrix
     
@@ -536,9 +523,6 @@ def write_data_set(output_path, sparse_matrix):
                         
             string_to_write = string_compiler(sparse_index2freq).strip(" ")
             f.write(string_to_write + "\n")
-
-            if i % 100 == 0:
-                print(i)
 
 """-----------------Above needs to be added to class of instance2tweet-----------------"""
 
@@ -619,16 +603,19 @@ def main(
     for ticker in ticker_list:
         output_paths = directory_builder(ticker)
         daily_intervals = daterange_2_dailyinterval(date_range)
-        for day in daily_intervals:
+        for i, day in enumerate(daily_intervals):
+            print(f'day: {i + 1}')
             day_start = day[0]
             day_end = day[1]
             daily_file_name = datetime_2_filename(day_start)
 
+            print("collecting Tweets")
             # collect day's tweets and store in raw/filename
             raw_data_day_path = os.path.join(output_paths['raw'], daily_file_name)
             tweet_collector = TweetCollector(client, day_start, day_end, raw_data_day_path)
             tweet_collector.execute_company_search(ticker)
 
+            print("removing duplicates")
             # load raw/filename, remove duplicates and write to duplicate/filename
             duplicate_removed_day_path = os.path.join(output_paths['duplicate'], daily_file_name)
             duplicate_pre_processor = duplicatePreProcessor(
@@ -640,12 +627,14 @@ def main(
             duplicate_pre_processor.pre_process_collection()
             duplicate_pre_processor.set_word2index()
             duplicate_pre_processor.duplicate_filter()
-
+            
+            print("engineering features")
             # load duplicate_filtered, engineer and write to engineered/filename
             engineered_day_path = os.path.join(output_paths['engineered'], daily_file_name)
             feature_engineering = featureEngineering(duplicate_removed_day_path, engineered_day_path, negation_indicator_path)
             feature_engineering.feature_updating()
 
+            print("writing instances")
             # turn the engineered features into instances and write instances
             instance_day_path = os.path.join(output_paths['unseen'], daily_file_name)
             vocabulary = load_vocabulary(vocabulary_path)
@@ -656,9 +645,9 @@ def main(
 if __name__ == "__main__":
     NEGATION_INDICATOR_PATH = '../data/negation_ind.txt'
     VOCABULARY_PATH = '../data/total_train_vocabulary.txt'
-    TICKER_LIST = ["AAPL"]
-    START_TIME = datetime.datetime(2022, 7, 15, 0, 0, 0, 0, datetime.timezone.utc)
-    END_TIME = datetime.datetime(2022, 7, 16, 0, 0, 0, 0, datetime.timezone.utc)
+    TICKER_LIST = ["$AAPL"]
+    START_TIME = datetime.datetime(2021, 7, 20, 0, 0, 0, 0, datetime.timezone.utc)
+    END_TIME = datetime.datetime(2022, 7, 20, 0, 0, 0, 0, datetime.timezone.utc)
     DATE_RANGE = (START_TIME, END_TIME)
     BEARER = os.environ.get("BEARER")
     CLIENT = Twarc2(bearer_token=BEARER)
