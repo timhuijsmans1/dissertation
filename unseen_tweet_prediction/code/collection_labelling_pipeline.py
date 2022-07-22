@@ -56,6 +56,7 @@ class TweetCollector():
         query = self.ticker_query_compiler(ticker)
         self.result_writer(query)
 
+
 class duplicatePreProcessor:
 
     def __init__(
@@ -311,8 +312,8 @@ class duplicatePreProcessor:
                         # will remain in the high freq tweets anyways.
                         sparse_vectors = [[vector, 1] for vector in high_freq_vectors]
 
-         
         return
+
 
 class featureEngineering:
 
@@ -631,7 +632,11 @@ def main(
             print("engineering features")
             # load duplicate_filtered, engineer and write to engineered/filename
             engineered_day_path = os.path.join(output_paths['engineered'], daily_file_name)
-            feature_engineering = featureEngineering(duplicate_removed_day_path, engineered_day_path, negation_indicator_path)
+            feature_engineering = featureEngineering(
+                                        duplicate_removed_day_path, 
+                                        engineered_day_path, 
+                                        negation_indicator_path
+            )
             feature_engineering.feature_updating()
 
             print("writing instances")
@@ -646,7 +651,7 @@ if __name__ == "__main__":
     NEGATION_INDICATOR_PATH = '../data/negation_ind.txt'
     VOCABULARY_PATH = '../data/total_train_vocabulary.txt'
     TICKER_LIST = ["$AAPL"]
-    START_TIME = datetime.datetime(2021, 7, 20, 0, 0, 0, 0, datetime.timezone.utc)
+    START_TIME = datetime.datetime(2022, 3, 24, 0, 0, 0, 0, datetime.timezone.utc)
     END_TIME = datetime.datetime(2022, 7, 20, 0, 0, 0, 0, datetime.timezone.utc)
     DATE_RANGE = (START_TIME, END_TIME)
     BEARER = os.environ.get("BEARER")

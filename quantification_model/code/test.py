@@ -49,7 +49,7 @@ def count_lines(path):
 if __name__ == "__main__":
     ENGINEERED_PATH = "../data/pre_processed_data/engineered.txt"
     LABELLED_PATH = "../data/pre_processed_data/labelled_data.txt"
-    TRAIN_OUTPUT_PATH = "../data/train_test_data/train.txt"
+    TRAIN_OUTPUT_PATH = "../data/train_test_data/train.dat"
 
     # test_n_grams(ENGINEERED_PATH, TRAIN_PATH, LABELLED_PATH)
     # df = data_splitting(ENGINEERED_PATH)

@@ -17,15 +17,13 @@ def df_builder(labelled_path):
             original_text = tweet_data['original_text']
             tokens = tweet_data['processed_tokens']
             emoticon_list = tweet_data['emoticon_list']
-            tweets.append((label, date_object, datetime_string, original_text, tokens, emoticon_list))
-            print(len(tweets))
+            tweets.append((label, date_object, datetime_string, original_text, tokens, emoticon_list))w
     labelled_tweet_df = pd.DataFrame(tweets, columns=['label', 'date', 'datetime string', 'original text', 'tokens', 'emoticon list'])
     
     return labelled_tweet_df
 
 def split_train_test(labelled_tweet_df):
     labelled_tweet_df.sort_values(by=['date'])
-    print(len(labelled_tweet_df))
     end_row = int(len(labelled_tweet_df) * 0.8)
 
     train_df = labelled_tweet_df.iloc[0:end_row, :]
@@ -46,7 +44,6 @@ def write_df_to_labelled(df, path):
             dict_as_string = json.dumps(dict_to_write) + "\n"
             f.write(dict_as_string)
     
-
 
 if __name__ == "__main__":
     LABELLED_PATH = '../data/pre_processed_data/labelled_data.txt'
