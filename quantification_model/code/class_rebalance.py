@@ -1,8 +1,6 @@
 import json
 import os
 
-from pyrsistent import l
-
 def class_balance_counter(path):
     label_counts = {'positive': 0, 'negative': 0}
     with open(path, 'r') as f:
@@ -39,7 +37,7 @@ def output_path_generator(input_path):
     return output_path
 
 if __name__ == "__main__":
-    INSTANCE_PATH = '../data/train_test_data/test.dat'
+    INSTANCE_PATH = '../data/train_test_data/weekly_split/instances/test/2022-02-02.dat'
     OUTPUT_PATH = output_path_generator(INSTANCE_PATH)
     lowest_count = class_balance_counter(INSTANCE_PATH)
     class_rebalancer(lowest_count, INSTANCE_PATH, OUTPUT_PATH)

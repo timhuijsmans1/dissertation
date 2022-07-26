@@ -48,12 +48,22 @@ def kindle_experiment(data):
     print('true ', true_prevalence)
     print('predicted', predicted_prevalence)
 
+def test_prevalences(model, test_folder):
+    for file in os.listdir(test_folder):
+        if file.endswith(".dat"):
+            instance_path = os.path.join(test_folder, file)
+            instances, labels = qp.data.reader.from_sparse(instance_path)
+            predicted_labels = model.classify(instances)
+            predicted_prevalence = prevalence_from_labels(predicted_labels)
+            true_prevalence = prevalence_from_labels(labels)
+            print('true ', true_prevalence)
+            print('predicted ', predicted_prevalence)
 
 if __name__ == "__main__":
-    TRAIN_PATH = "../../data/train_test_data/train_balanced.dat"
-    TEST_PATH = "../../data/train_test_data/test.dat"
-    data = qp.datasets.fetch_twitter('hcr')
+    TRAIN_PATH = "../../data/train_test_data/80_20_split/train_balanced.dat"
+    TEST_PATH = "../../data/train_test_data/80_20_split/test.dat"
+    # WEEKLY_TEST_FOLDER = "../../data/train_test_data/weekly_test_folder"
     data = qp.data.Dataset.load(TRAIN_PATH, TEST_PATH, qp.data.reader.from_sparse)
-    train_model(data)
-    predict(data)
+    # train_model(data)
+    # predict(data)
     # kindle_experiment(data)

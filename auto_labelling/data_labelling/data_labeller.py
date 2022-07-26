@@ -1,3 +1,4 @@
+from cProfile import label
 import json
 import os
 import re
@@ -26,6 +27,7 @@ class dataLabeller:
         self.pos_emoticon = pos_emoticon
         self.neg_emoticon = neg_emoticon
         self.negation_indicators = self.negation_indicator_loader(negation_file_path)
+        self.neutral_emo_count = 0
     
 
     def negation_indicator_loader(self, negation_file_path):
@@ -70,23 +72,30 @@ class dataLabeller:
         return label, tweet_score
     
     def emoticon_labeller(self, emoticon_list):
+        contains_pos = False
+        contains_neg = False
         emoticon_score = 0
         used_emoticons = [] # keeps track of the emoticons used for score calculation
         for emoticon in emoticon_list:
             if emoticon in self.pos_emoticon:
                 used_emoticons.append(emoticon)
                 emoticon_score += 1
+                contains_pos = True
             if emoticon in self.neg_emoticon:
                 used_emoticons.append(emoticon)
                 emoticon_score -= 1
+                contains_neg = True
         if emoticon_score > 0:
             label = 1
-        if emoticon_score < 0:
+        elif emoticon_score < 0:
             label = -1
-        if emoticon_score == 0:
+        elif emoticon_score == 0 and used_emoticons:
+            label = 0
+            self.neutral_emo_count += 1
+        else:
             label = None
-
-        return label, emoticon_score, used_emoticons
+        mixed_emotions = contains_pos * contains_neg
+        return label, emoticon_score, used_emoticons, mixed_emotions
 
     def emoji_extractor(self, tweet_text):
         emoji_list = []
@@ -235,9 +244,10 @@ class dataLabeller:
         emoticon_list = dict_to_write['emoticon_list']
         # label the tweet
         lexicon_label, lexicon_score = self.lexicon_labeller(tweet_tokens)
-        emoticon_label, emoticon_score, used_emoticons = self.emoticon_labeller(emoticon_list)
+        emoticon_label, emoticon_score, used_emoticons, mixed_emotions = self.emoticon_labeller(emoticon_list)
 
-        if lexicon_label == emoticon_label:
+        # skip tweets with a neutral emoticon sum
+        if lexicon_label == emoticon_label and emoticon_label != 0:
             dict_to_write['label'] = lexicon_label
         
         return dict_to_write
@@ -246,19 +256,53 @@ class dataLabeller:
         tweet_tokens = dict_to_write['processed_tokens']
         # label the tweet
         lexicon_label, lexicon_score = self.lexicon_labeller(tweet_tokens)
-        dict_to_write['label'] = lexicon_label
+        if lexicon_label != 0:    
+            dict_to_write['label'] = lexicon_label
         
         return dict_to_write
 
     def emoticon_executor(self, dict_to_write):
         emoticon_list = dict_to_write['emoticon_list']
         # label the tweet
-        emoticon_label, emoticon_score, used_emoticons = self.emoticon_labeller(emoticon_list)
-        dict_to_write['label'] = emoticon_label
+        emoticon_label, emoticon_score, used_emoticons, mixed_emotions = self.emoticon_labeller(emoticon_list)
+        if emoticon_label != None and emoticon_label != 0: # skip neutral and none tweets
+            dict_to_write['label'] = emoticon_label
         
         return dict_to_write
 
-        
+    def build_dict_to_write(self, tweet_data):
+        tweet_text = tweet_data['text']
+        tweet_creation_date = tweet_data['created_at']
+        pre_processed_data = self.tweet_pre_processing(tweet_text)
+        tweet_tokens = pre_processed_data['tweet_tokens']
+        emoticon_list = pre_processed_data['emoticon_list']
+        cashtag_list = pre_processed_data['cashtag_list']
+        dict_to_write = dict_to_write = {
+            'original_text': tweet_text,
+            'created_at': tweet_creation_date,
+            'processed_tokens': tweet_tokens,
+            'emoticon_list': emoticon_list,
+            'cashtag_list': cashtag_list
+        }
+        return dict_to_write
+
+    def contains_spamwords(self, tweet_text_string):
+        tweet_text_string = tweet_text_string.lower()
+        spam_words = [
+            'crypto', 
+            'discord', 
+            'altcoin', 
+            '$eth', 
+            '$shib',
+            '$doge',
+            'alt', 
+            'coinbase'
+        ]
+        for word in spam_words:
+            if word in tweet_text_string:
+                return True
+        return False
+
     def file_labeller(self, path, method='union'):
         class_balance_counter = {-1: 0, 0: 0, 1: 0}
 
@@ -271,24 +315,13 @@ class dataLabeller:
                 if not line:
                     break
                 else:
-                    # TODO this is a bit messy, but is done because the 
-                    # loaded data contains a lot of redundant info.
-                    # Rewrite this to not write values back and forth 
-                    # as much
                     tweet_data = json.loads(line)
-                    tweet_text = tweet_data['text']
-                    tweet_creation_date = tweet_data['created_at']
-                    pre_processed_data = self.tweet_pre_processing(tweet_text)
-                    tweet_tokens = pre_processed_data['tweet_tokens']
-                    emoticon_list = pre_processed_data['emoticon_list']
-                    cashtag_list = pre_processed_data['cashtag_list']
-                    dict_to_write = dict_to_write = {
-                        'original_text': tweet_text,
-                        'created_at': tweet_creation_date,
-                        'processed_tokens': tweet_tokens,
-                        'emoticon_list': emoticon_list,
-                        'cashtag_list': cashtag_list
-                    }
+                    dict_to_write = self.build_dict_to_write(tweet_data)
+                    original_text_string = dict_to_write['original_text']
+                    
+                    # skip the tweet if it contains any of the spam words
+                    if self.contains_spamwords(original_text_string):
+                        continue
 
                     if method == 'union':
                         dict_to_write = self.emoticon_lexicon_executor(dict_to_write)
@@ -309,7 +342,8 @@ class dataLabeller:
                             class_balance_counter[0] += 1
 
                     count += 1
-                print(count)
+                if count % 1000 == 0:
+                    print(count)
         print(class_balance_counter)
 
         return
@@ -317,14 +351,14 @@ class dataLabeller:
 if __name__ == "__main__":
     # global variables
     DATA_PATH = (
-        "../data/preprocessed_data/final_data_07-05-2022_16;29;51.txt"
+        "../data/preprocessed_data/final_data_july25_cashtag_repetition.txt"
     )
-    OUTPUT_PATH = "../data/labelled_data/labelled_data.txt"
+    OUTPUT_PATH = "../data/labelled_data/labelled_data_lexicon_cashtag.txt"
     FINANCIAL_LEXICON_PATH = "../data/fin_sent_lexicon/lexicons/lexiconWNPMINW.csv"
     NEG_INDICATOR_PATH = "./negation_ind.txt"
     LEXICON_SCORE_THRESHOLD = 0.01
     POS_EMOTICON_LIST = ["😀", "😃", "😄", "😁", "🙂"]
-    NEG_EMOTICON_LIST = ["😡", "😤", "😟", "😰", "😨", "😖", "😩", "🤬", "😠", "💀", "👎", "😱"]
+    NEG_EMOTICON_LIST = ["😡", "😤", "😟", "😰", "😨", "😖", "😩", "🤬", "😠", "💀", "👎", "📉"]
 
     # exucute data labelling
     data_labeller = dataLabeller(
@@ -335,4 +369,4 @@ if __name__ == "__main__":
         POS_EMOTICON_LIST, 
         NEG_EMOTICON_LIST
     )
-    data_labeller.file_labeller(DATA_PATH)
+    data_labeller.file_labeller(DATA_PATH, method='lexicon')

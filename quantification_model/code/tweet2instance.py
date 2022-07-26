@@ -49,7 +49,7 @@ class featureEngineering:
     def __init__(self, tweet_path, engineered_output_path):
         self.input_path = tweet_path
         self.output_path = engineered_output_path
-        self.vocabulary = set()
+        self.vocabulary = {}
 
     def post_num_and_negation_strip(self, tokens):
         return [token.strip(',.!;:?()#&- ') for token in tokens]
@@ -95,7 +95,14 @@ class featureEngineering:
         return tweet_data
     
     def vocabulary_updater(self, tweet_tokens):
-        self.vocabulary |= set(tweet_tokens)
+        for token in tweet_tokens:
+            if token not in self.vocabulary:
+                self.vocabulary[token] = 1
+            if token in self.vocabulary:
+                self.vocabulary[token] += 1
+
+    def infrequent_vocabulary_filter(self):
+        self.vocabulary = {k:v for k,v in self.vocabulary.items() if v > 2}
 
     def feature_updating(self):
         count = 0
@@ -112,6 +119,7 @@ class featureEngineering:
                 count += 1
                 if count % 1000 == 0:    
                     print(count)
+        self.infrequent_vocabulary_filter()
         return list(self.vocabulary)
 
 def load_vocabulary(voc_path):
@@ -135,6 +143,13 @@ def append_sparse_matrix(new_sparse_vec, sparse_matrix):
     sparse_matrix = sparse.hstack((sparse_matrix, vector_to_stack))
     return sparse_matrix
 
+def track_existing_features(feature_dict, existing_features=[]):
+    for key in feature_dict:
+        if feature_dict[key] != 0:
+            if key not in existing_features:
+                existing_features.append(key)
+    return existing_features
+
 def build_sparse_matrix(tweet_path, vocabulary):
     tweet2instance = features2Instance(vocabulary)
     labels = []
@@ -143,6 +158,7 @@ def build_sparse_matrix(tweet_path, vocabulary):
         # read the first line
         line = f.readline()
         tokens, label, feature_dictionary = read_line(line)
+        existing_features = track_existing_features(feature_dictionary)
         sparse_matrix = tweet2instance.get_sparse_matrix_from_tweet(tokens, feature_dictionary).T
         labels.append(label)
         count = 0
@@ -153,6 +169,7 @@ def build_sparse_matrix(tweet_path, vocabulary):
             if not line:
                 break
             tokens, label, feature_dictionary = read_line(line)
+            existing_features = track_existing_features(feature_dictionary, existing_features)
             new_sparse_matrix = tweet2instance.get_sparse_matrix_from_tweet(tokens, feature_dictionary)
             sparse_matrix = append_sparse_matrix(
                                 new_sparse_matrix, 
@@ -162,6 +179,7 @@ def build_sparse_matrix(tweet_path, vocabulary):
             count += 1
             if count % 100 == 0:   
                 print(count)
+                print(sparse_matrix.shape)
 
     return sparse_matrix, labels
     
@@ -179,35 +197,50 @@ def write_data_set(output_path, sparse_matrix, labels):
             # so change to better code
             sparse_col = sparse_matrix.getcol(i)
             sparse_indices = sparse_col.nonzero()[0]
+            sparse_values = [float(value) for value in sparse_col.data]
             # map the sparse index to its frequency in the tweet
-            sparse_index2freq = {index: sparse_col.getrow(index).toarray()[0][0] for index in sparse_indices}
-                        
+            # sparse_index2freqz = {index: sparse_col.getrow(index).toarray()[0][0] for index in sparse_indices}
+            sparse_index2freq = dict(zip(sparse_indices, sparse_values))
             string_to_write = string_compiler(sparse_index2freq).strip(" ")
             f.write(f"{str(labels[i])} " + string_to_write + "\n")
 
             if i % 1000 == 0:
                 print(i)
 
+def extract_train_vocabulary(train_path):
+    vocabulary = {}
+    with open(train_path, 'r') as f:
+        for line in f:
+            tweet_data = json.loads(line)
+            for token in tweet_data['n-grams']:
+                if token not in vocabulary:
+                    vocabulary[token] = 1
+                if token in vocabulary:
+                    vocabulary[token] += 1
+    vocabulary = {k:v for k,v in vocabulary.items() if v > 2}
+    vocabulary = list(vocabulary)
+    return vocabulary
 
 if __name__ == "__main__":
-    TRAIN_LABELLED_PATH = '../data/pre_processed_data/labelled_train_data.txt'
-    TEST_LABELLED_PATH = '../data/pre_processed_data/labelled_test_data.txt'
-    TOTAL_LABELLED_PATH = '../data/pre_processed_data/labelled_total_train_data.txt'
-    TRAIN_VOCABULARY_PATH = "../data/pre_processed_data/train_vocabulary.txt"
-    TOTAL_VOCABULARY_PATH = "../data/pre_processed_data/total_train_vocabulary.txt"
-    ENGINEERED_TRAIN_PATH = "../data/pre_processed_data/engineered_train.txt"
-    ENGINEERED_TEST_PATH = "../data/pre_processed_data/engineered_test.txt"
-    ENGINEERED_TOTAL_PATH = "../data/pre_processed_data/engineered_total_train.txt"
-    TRAIN_OUTPUT_PATH = "../data/train_test_data/train.txt"
-    TEST_OUTPUT_PATH = "../data/train_test_data/test.txt"
-    TOTAL_OUTPUT_PATH = "../data/train_test_data/total_train.txt"
-
+    
+    # TRAIN_LABELLED_PATH = '../data/pre_processed_data/labelled_train_data.txt'
+    # TEST_LABELLED_PATH = '../data/pre_processed_data/labelled_test_data.txt'
+    # TOTAL_LABELLED_PATH = '../data/pre_processed_data/labelled_total_train_data.txt'
+    # TRAIN_VOCABULARY_PATH = "../data/pre_processed_data/train_vocabulary.txt"
+    # TOTAL_VOCABULARY_PATH = "../data/pre_processed_data/total_train_vocabulary.txt"
+    # ENGINEERED_TRAIN_PATH = "../data/pre_processed_data/engineered_train.txt"
+    # ENGINEERED_TEST_PATH = "../data/pre_processed_data/engineered_test.txt"
+    # ENGINEERED_TOTAL_PATH = "../data/pre_processed_data/engineered_total_train.txt"
+    # TRAIN_OUTPUT_PATH = "../data/train_test_data/train.txt"
+    # TEST_OUTPUT_PATH = "../data/train_test_data/test.txt"
+    # TOTAL_OUTPUT_PATH = "../data/train_test_data/total_train.txt"
+    
     """TRAIN INSTANCE GENERATION OF FULL DATASET"""
-    feature_engineering = featureEngineering(TOTAL_LABELLED_PATH, ENGINEERED_TOTAL_PATH)
-    total_vocabulary = feature_engineering.feature_updating()
-    write_vocabulary(TOTAL_VOCABULARY_PATH, total_vocabulary)
-    sparse_total_matrix, total_labels = build_sparse_matrix(ENGINEERED_TOTAL_PATH, total_vocabulary)
-    write_data_set(TOTAL_OUTPUT_PATH, sparse_total_matrix, total_labels)
+    # feature_engineering = featureEngineering(TOTAL_LABELLED_PATH, ENGINEERED_TOTAL_PATH)
+    # total_vocabulary = feature_engineering.feature_updating()
+    # write_vocabulary(TOTAL_VOCABULARY_PATH, total_vocabulary)
+    # sparse_total_matrix, total_labels = build_sparse_matrix(ENGINEERED_TOTAL_PATH, total_vocabulary)
+    # write_data_set(TOTAL_OUTPUT_PATH, sparse_total_matrix, total_labels)
     
     """TRAIN AND TEST INSTANCE GENERATION WITH PREMADE FEATURES ENGINEERED"""
     # train_vocabulary = load_vocabulary(TRAIN_VOCABULARY_PATH)
@@ -218,9 +251,56 @@ if __name__ == "__main__":
     # sparse_test_matrix, test_labels = build_sparse_matrix(ENGINEERED_TEST_PATH, train_vocabulary)
     # write_data_set(TEST_OUTPUT_PATH, sparse_test_matrix, test_labels)
     
-    
-    
+    """WEEKLY SPLIT INSTANCE GENERATION"""
+    # DATA_FOLDER = "../data/pre_processed_data/weekly_split"
+    # TRAIN_PATH = f"{DATA_FOLDER}/train/engineered_balanced.txt"
+    # TEST_FOLDER = f"{DATA_FOLDER}/test"
+    # OUTPUT_FOLDER = "../data/train_test_data/weekly_split/instances"
+    # TRAIN_OUTPUT_PATH = f"{OUTPUT_FOLDER}/train.dat"
+    # TEST_OUTPUT_FOLDER = f"{OUTPUT_FOLDER}/test"
+    # LIST_OF_TEST_PATHS = [os.path.join(TEST_FOLDER, filename) for filename in os.listdir(TEST_FOLDER) if filename[0] != '.']
+    # vocabulary = extract_train_vocabulary(TRAIN_PATH)
+    # print(len(vocabulary))
+    # write_vocabulary(f"{DATA_FOLDER}/weekly_split_voc.txt", vocabulary)
+    # sparse_train_matrix, train_labels = build_sparse_matrix(TRAIN_PATH, vocabulary)
+    # write_data_set(TRAIN_OUTPUT_PATH, sparse_train_matrix, train_labels)
+    # for i, test_file in enumerate(LIST_OF_TEST_PATHS):
+    #     print(f"{i + 1} / {len(LIST_OF_TEST_PATHS)}")
+    #     test_output_path = f"{TEST_OUTPUT_FOLDER}/{os.path.basename(test_file)}"
+    #     sparse_test_matrix, test_labels = build_sparse_matrix(test_file, vocabulary)
+    #     write_data_set(test_output_path, sparse_test_matrix, test_labels)
 
-    
-        
+    """TRAIN INSTANCE GENERATION OF BALANCED DATASET EMOTICON AND UNION"""
+    # TOTAL_LABELLED_PATH_LEXICON = "../data/pre_processed_data/rebalanced/labelled_train_union_balanced.txt"
+    # ENGINEERED_TOTAL_PATH_LEXICON = "../data/pre_processed_data/rebalanced/engineered_train_union_balanced.txt"
+    # TOTAL_VOCABULARY_PATH_LEXICON = "../data/pre_processed_data/rebalanced/vocabularies/train_union_vocabulary.txt"
+    # TOTAL_OUTPUT_PATH_LEXICON = "../data/train_test_data/rebalanced/train_union.txt"
+    # TOTAL_LABELLED_PATH_EMOTICON = "../data/pre_processed_data/rebalanced/labelled_train_emoticon_balanced.txt"
+    # ENGINEERED_TOTAL_PATH_EMOTICON = "../data/pre_processed_data/rebalanced/engineered_train_emoticon_balanced.txt"
+    # TOTAL_VOCABULARY_PATH_EMOTICON = "../data/pre_processed_data/rebalanced/vocabularies/train_emoticon_vocabulary.txt"
+    # TOTAL_OUTPUT_PATH_EMOTICON = "../data/train_test_data/rebalanced/train_emoticon.txt"
 
+    # feature_engineering = featureEngineering(TOTAL_LABELLED_PATH_LEXICON, ENGINEERED_TOTAL_PATH_LEXICON)
+    # total_vocabulary = feature_engineering.feature_updating()
+    # write_vocabulary(TOTAL_VOCABULARY_PATH_LEXICON, total_vocabulary)
+    # sparse_total_matrix, total_labels = build_sparse_matrix(ENGINEERED_TOTAL_PATH_LEXICON, total_vocabulary)
+    # write_data_set(TOTAL_OUTPUT_PATH_LEXICON, sparse_total_matrix, total_labels)
+    # del(feature_engineering, total_vocabulary, sparse_total_matrix, total_labels)
+
+    # feature_engineering = featureEngineering(TOTAL_LABELLED_PATH_EMOTICON, ENGINEERED_TOTAL_PATH_EMOTICON)
+    # total_vocabulary = feature_engineering.feature_updating()
+    # write_vocabulary(TOTAL_VOCABULARY_PATH_EMOTICON, total_vocabulary)
+    # sparse_total_matrix, total_labels = build_sparse_matrix(ENGINEERED_TOTAL_PATH_EMOTICON, total_vocabulary)
+    # write_data_set(TOTAL_OUTPUT_PATH_EMOTICON, sparse_total_matrix, total_labels)
+            
+
+    """REBALANCED CASHTAGREMOVED UNION"""
+    TOTAL_LABELLED_PATH_LEXICON = "../data/pre_processed_data/rebalanced/labelled_data_lexicon_cashtag_rebalanced.txt"
+    ENGINEERED_TOTAL_PATH_LEXICON = "../data/pre_processed_data/rebalanced/engineered_data_lexicon_cashtag_rebalanced.txt"
+    TOTAL_VOCABULARY_PATH_LEXICON = "../data/pre_processed_data/rebalanced/vocabularies/vocabulary_lexicon_cashtag_rebalanced.txt"
+    TOTAL_OUTPUT_PATH_LEXICON = "../data/train_test_data/rebalanced/train_lexicon_cashtag.txt"
+    feature_engineering = featureEngineering(TOTAL_LABELLED_PATH_LEXICON, ENGINEERED_TOTAL_PATH_LEXICON)
+    total_vocabulary = feature_engineering.feature_updating()
+    write_vocabulary(TOTAL_VOCABULARY_PATH_LEXICON, total_vocabulary)
+    sparse_total_matrix, total_labels = build_sparse_matrix(ENGINEERED_TOTAL_PATH_LEXICON, total_vocabulary)
+    write_data_set(TOTAL_OUTPUT_PATH_LEXICON, sparse_total_matrix, total_labels)
